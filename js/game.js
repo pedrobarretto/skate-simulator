@@ -133,13 +133,32 @@ class Game {
     const skaterPosition = this.skater.getPosition();
     const skaterDirection = this.skater.getDirection();
 
-    // Position camera behind the skater
-    this.camera.position.x = skaterPosition.x - skaterDirection.x * 10;
-    this.camera.position.y = skaterPosition.y + 5;
-    this.camera.position.z = skaterPosition.z - skaterDirection.z * 10;
+    // Get skater state for better camera behavior
+    const isGrinding = this.skater.isGrinding;
+    const isOnRamp = !this.skater.isInAir && !this.skater.isOnGround;
 
-    // Look at skater
-    this.camera.lookAt(skaterPosition);
+    // Calculate ideal camera position
+    let idealCameraX = skaterPosition.x - skaterDirection.x * 10;
+    let idealCameraZ = skaterPosition.z - skaterDirection.z * 10;
+
+    // Smoothing factor - higher when grinding or on ramps for more stable camera
+    const smoothingFactor = isGrinding || isOnRamp ? 0.05 : 0.1;
+
+    // Smoothly interpolate camera position
+    this.camera.position.x +=
+      (idealCameraX - this.camera.position.x) * smoothingFactor;
+    this.camera.position.y = skaterPosition.y + 5; // Height is still direct
+    this.camera.position.z +=
+      (idealCameraZ - this.camera.position.z) * smoothingFactor;
+
+    // Look slightly ahead of the skater in the direction of movement for better anticipation
+    const lookAtTarget = new THREE.Vector3(
+      skaterPosition.x + skaterDirection.x * 2,
+      skaterPosition.y,
+      skaterPosition.z + skaterDirection.z * 2
+    );
+
+    this.camera.lookAt(lookAtTarget);
   }
 
   checkTricks() {

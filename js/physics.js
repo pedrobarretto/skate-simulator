@@ -58,20 +58,50 @@ class Physics {
       const railPos = rail.position;
       const railDim = rail.dimensions;
 
-      // Check if position is within rail bounds
+      // Much bigger detection area for rails
       const xDiff = Math.abs(position.x - railPos.x);
       const yDiff = Math.abs(position.y - (railPos.y + railDim.height / 2));
       const zDiff = Math.abs(position.z - railPos.z);
 
+      // Initial broad check with very generous boundaries
       if (
-        xDiff < railDim.width * 1.5 &&
-        yDiff < railDim.height * 0.8 &&
-        zDiff < railDim.length / 2
+        xDiff < railDim.width * 2.5 &&
+        yDiff < railDim.height * 2.0 &&
+        zDiff < railDim.length / 2 + 2.0
       ) {
-        return {
-          isOnRail: true,
-          rail: rail,
-        };
+        // If we're close enough, do a more refined check
+        // Create a rectangular prism for rail collision
+
+        // Different collision detection based on height
+        // If we're above the rail, use wider detection to help snap onto it
+        if (position.y >= railPos.y + railDim.height / 4) {
+          // Above the rail - wider top boundary for grinding
+          if (
+            xDiff < railDim.width * 2.0 &&
+            position.y < railPos.y + railDim.height * 2.0 &&
+            position.y > railPos.y &&
+            zDiff < railDim.length / 2 + 0.5
+          ) {
+            return {
+              isOnRail: true,
+              rail: rail,
+              approach: 'from_above',
+            };
+          }
+        } else {
+          // Side approach - narrower boundary to prevent passing through
+          if (
+            xDiff < railDim.width * 1.2 &&
+            yDiff < railDim.height * 1.2 &&
+            zDiff < railDim.length / 2 + 0.5
+          ) {
+            return {
+              isOnRail: true,
+              rail: rail,
+              approach: 'from_side',
+            };
+          }
+        }
       }
     }
 
@@ -80,59 +110,115 @@ class Physics {
 
   // Check collision with obstacles
   checkObstacleCollision(position, velocity, obstacles) {
+    // Consider the skater as having some width (representing the skateboard)
+    const skaterWidth = 1.0; // Increase from 0.8
+    const skaterLength = 1.8; // Increase from 1.5
+    const skaterHeight = 1.5; // Increase from 1.0
+
     for (let obstacle of obstacles) {
       if (obstacle.type === 'funbox') {
         const boxPos = obstacle.position;
         const boxDim = obstacle.dimensions;
 
-        // Simple box collision
+        // Enhanced box collision with even larger detection boundaries
         if (
-          position.x > boxPos.x - boxDim.width / 2 - 1 &&
-          position.x < boxPos.x + boxDim.width / 2 + 1 &&
-          position.z > boxPos.z - boxDim.length / 2 - 1 &&
-          position.z < boxPos.z + boxDim.length / 2 + 1 &&
-          position.y < boxPos.y + boxDim.height + 1 &&
-          position.y > boxPos.y - 1
+          position.x > boxPos.x - boxDim.width / 2 - skaterWidth / 2 &&
+          position.x < boxPos.x + boxDim.width / 2 + skaterWidth / 2 &&
+          position.z > boxPos.z - boxDim.length / 2 - skaterLength / 2 &&
+          position.z < boxPos.z + boxDim.length / 2 + skaterLength / 2 &&
+          position.y < boxPos.y + boxDim.height + skaterHeight / 2 &&
+          position.y > boxPos.y - skaterHeight / 2
         ) {
-          // Calculate collision response
+          // Calculate collision response with enhanced normal calculation
+          const normal = this.calculateBoxNormal(position, boxPos, boxDim);
+
+          // More accurate penetration depth calculation
+          let penetrationDepth = 0.2; // Default minimum push
+
+          // Calculate penetration based on which side we hit
+          if (Math.abs(normal.x) > 0.7) {
+            // Collision with x-axis face
+            const rightEdge = boxPos.x + boxDim.width / 2 + skaterWidth / 2;
+            const leftEdge = boxPos.x - boxDim.width / 2 - skaterWidth / 2;
+            penetrationDepth =
+              normal.x > 0
+                ? Math.abs(position.x - leftEdge)
+                : Math.abs(position.x - rightEdge);
+          } else if (Math.abs(normal.y) > 0.7) {
+            // Collision with y-axis face (top/bottom)
+            const topEdge = boxPos.y + boxDim.height + skaterHeight / 2;
+            const bottomEdge = boxPos.y - skaterHeight / 2;
+            penetrationDepth =
+              normal.y > 0
+                ? Math.abs(position.y - bottomEdge)
+                : Math.abs(position.y - topEdge);
+          } else if (Math.abs(normal.z) > 0.7) {
+            // Collision with z-axis face
+            const frontEdge = boxPos.z + boxDim.length / 2 + skaterLength / 2;
+            const backEdge = boxPos.z - boxDim.length / 2 - skaterLength / 2;
+            penetrationDepth =
+              normal.z > 0
+                ? Math.abs(position.z - backEdge)
+                : Math.abs(position.z - frontEdge);
+          }
+
+          // Ensure minimum push distance and maximum reasonable push
+          penetrationDepth = Math.max(0.2, Math.min(penetrationDepth, 1.5));
+
           return {
             hasCollided: true,
             obstacle: obstacle,
-            normal: this.calculateBoxNormal(position, boxPos, boxDim),
+            normal: normal,
+            penetrationDepth: penetrationDepth,
           };
         }
       } else if (obstacle.type === 'wall') {
-        // Wall collision (simplified)
+        // Enhanced wall collision with larger detection boundaries
         const wallPos = obstacle.position;
-        // Detect which wall based on position
-        if (wallPos.z < -40 && Math.abs(position.z - wallPos.z) < 2) {
-          // North wall
-          return {
-            hasCollided: true,
-            obstacle: obstacle,
-            normal: new THREE.Vector3(0, 0, 1),
-          };
-        } else if (wallPos.z > 40 && Math.abs(position.z - wallPos.z) < 2) {
-          // South wall
-          return {
-            hasCollided: true,
-            obstacle: obstacle,
-            normal: new THREE.Vector3(0, 0, -1),
-          };
-        } else if (wallPos.x > 40 && Math.abs(position.x - wallPos.x) < 2) {
-          // East wall
-          return {
-            hasCollided: true,
-            obstacle: obstacle,
-            normal: new THREE.Vector3(-1, 0, 0),
-          };
-        } else if (wallPos.x < -40 && Math.abs(position.x - wallPos.x) < 2) {
-          // West wall
-          return {
-            hasCollided: true,
-            obstacle: obstacle,
-            normal: new THREE.Vector3(1, 0, 0),
-          };
+
+        // North/South walls (Z-axis)
+        if (wallPos.z < -40) {
+          // North wall - larger detection zone
+          if (position.z < wallPos.z + 2.5 && position.z > wallPos.z - 1.5) {
+            return {
+              hasCollided: true,
+              obstacle: obstacle,
+              normal: new THREE.Vector3(0, 0, 1),
+              penetrationDepth: Math.abs(position.z - (wallPos.z + 1.0)),
+            };
+          }
+        } else if (wallPos.z > 40) {
+          // South wall - larger detection zone
+          if (position.z > wallPos.z - 2.5 && position.z < wallPos.z + 1.5) {
+            return {
+              hasCollided: true,
+              obstacle: obstacle,
+              normal: new THREE.Vector3(0, 0, -1),
+              penetrationDepth: Math.abs(position.z - (wallPos.z - 1.0)),
+            };
+          }
+        }
+        // East/West walls (X-axis)
+        else if (wallPos.x > 40) {
+          // East wall - larger detection zone
+          if (position.x > wallPos.x - 2.5 && position.x < wallPos.x + 1.5) {
+            return {
+              hasCollided: true,
+              obstacle: obstacle,
+              normal: new THREE.Vector3(-1, 0, 0),
+              penetrationDepth: Math.abs(position.x - (wallPos.x - 1.0)),
+            };
+          }
+        } else if (wallPos.x < -40) {
+          // West wall - larger detection zone
+          if (position.x < wallPos.x + 2.5 && position.x > wallPos.x - 1.5) {
+            return {
+              hasCollided: true,
+              obstacle: obstacle,
+              normal: new THREE.Vector3(1, 0, 0),
+              penetrationDepth: Math.abs(position.x - (wallPos.x + 1.0)),
+            };
+          }
         }
       }
     }
@@ -143,34 +229,56 @@ class Physics {
   // Helper methods for collision detection
 
   pointDistanceToHalfPipe(point, halfPipe) {
-    // Simplified distance calculation to half-pipe
+    // Enhanced distance calculation to half-pipe
     const pipePos = halfPipe.position;
     const pipeDim = halfPipe.dimensions;
 
-    // Check if within length bounds
-    if (Math.abs(point.z - pipePos.z) > pipeDim.length / 2) {
+    // Check if within length bounds with larger tolerance
+    if (Math.abs(point.z - pipePos.z) > pipeDim.length / 2 + 1.0) {
       return 100; // Out of range
     }
 
-    // Calculate distance to curved surface (simplified)
-    const dx = point.x - pipePos.x;
-    const dy = point.y - pipePos.y;
-    const distToCenter = Math.sqrt(dx * dx + dy * dy);
+    // Calculate distance to curved surface with improved precision
+    const heightFromGround = point.y;
+    const distanceFromCenter = Math.abs(point.x - pipePos.x);
 
-    return Math.abs(distToCenter - pipeDim.width / 2);
+    // Use a more accurate half-pipe model based on a semi-circle
+    const pipeRadius = pipeDim.width / 2;
+
+    if (distanceFromCenter > pipeRadius + 1.0) {
+      return 100; // Too far from pipe horizontally
+    }
+
+    // Calculate expected height at this x-position using quarter-circle formula
+    let expectedHeight = 0;
+    if (distanceFromCenter < pipeRadius) {
+      // Inside half-pipe radius - calculate height using circle equation
+      expectedHeight =
+        pipeRadius -
+        Math.sqrt(
+          pipeRadius * pipeRadius - Math.pow(distanceFromCenter - pipeRadius, 2)
+        );
+    }
+
+    // Return distance to expected surface
+    return Math.abs(heightFromGround - expectedHeight);
   }
 
   calculateHalfPipeNormal(point, halfPipe) {
-    // Simplified normal calculation for half-pipe
+    // Enhanced normal calculation for half-pipe
     const pipePos = halfPipe.position;
+    const pipeDim = halfPipe.dimensions;
+    const pipeRadius = pipeDim.width / 2;
 
-    // Calculate vector from center of pipe to point
+    // Calculate position relative to the center of the half-pipe curve
     const dx = point.x - pipePos.x;
-    const dy = point.y - pipePos.y;
+    const dy = point.y;
 
-    // Normalize
-    const length = Math.sqrt(dx * dx + dy * dy);
-    return new THREE.Vector3(dx / length, dy / length, 0);
+    // Get angle in the half-pipe curve
+    const angle = Math.atan2(dy, dx - pipeRadius);
+
+    // Calculate normal vector pointing perpendicular to the curve surface
+    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).normalize();
   }
 
   isPointOnRamp(point, ramp) {
@@ -178,90 +286,134 @@ class Physics {
     const rampDim = ramp.dimensions;
     const rampRot = ramp.rotation;
 
-    // Check if within width bounds
-    if (Math.abs(point.x - rampPos.x) > rampDim.width / 2) {
+    // Check if within width bounds with larger detection area
+    if (Math.abs(point.x - rampPos.x) > rampDim.width / 2 + 1.0) {
       return false;
     }
 
-    // Check if within length bounds
-    if (Math.abs(point.z - rampPos.z) > rampDim.length / 2) {
+    // Check if within length bounds with larger detection area
+    if (Math.abs(point.z - rampPos.z) > rampDim.length / 2 + 1.5) {
       return false;
     }
 
-    // Calculate expected y based on ramp angle
+    // Calculate expected y based on ramp angle with improved precision
     const angleX = rampRot.x;
-    const distFromBase = point.z - (rampPos.z - rampDim.length / 2);
-    const expectedY = rampPos.y + Math.tan(angleX) * distFromBase;
 
-    // Check if point is close to the expected y
-    return Math.abs(point.y - expectedY) < 0.5;
+    // Calculate the z-distance from the start of the ramp
+    let distFromBase;
+    if (rampRot.x > 0) {
+      // Ramp sloping upward in +z direction
+      distFromBase = point.z - (rampPos.z - rampDim.length / 2);
+    } else {
+      // Ramp sloping upward in -z direction
+      distFromBase = rampPos.z + rampDim.length / 2 - point.z;
+    }
+
+    // Calculate the expected height at this point on the ramp
+    const expectedY = rampPos.y + Math.tan(Math.abs(angleX)) * distFromBase;
+
+    // Much more generous tolerance for height check
+    // This makes it easier to climb and stay on ramps
+    const tolerance = 1.0 + Math.abs(Math.tan(angleX)) * 0.5; // Larger tolerance for steeper ramps
+    return Math.abs(point.y - expectedY) < tolerance;
   }
 
   calculateRampNormal(ramp) {
     const angleX = ramp.rotation.x;
-    return new THREE.Vector3(
-      0,
-      Math.cos(angleX),
-      -Math.sin(angleX)
-    ).normalize();
+
+    // More accurate normal calculation that respects the actual slope orientation
+    const normalY = Math.cos(Math.abs(angleX));
+    let normalZ;
+
+    if (angleX > 0) {
+      // Ramp sloping up in +z direction
+      normalZ = -Math.sin(Math.abs(angleX));
+    } else {
+      // Ramp sloping up in -z direction
+      normalZ = Math.sin(Math.abs(angleX));
+    }
+
+    // For steep ramps, slightly enhance the y component for better climbing
+    if (Math.abs(angleX) > Math.PI / 6) {
+      // Steeper than 30 degrees
+      const enhancedY = normalY * 1.1; // Slightly boost the Y component
+      return new THREE.Vector3(0, enhancedY, normalZ).normalize();
+    } else {
+      return new THREE.Vector3(0, normalY, normalZ).normalize();
+    }
   }
 
   pointDistanceToQuarterPipe(point, pipe) {
-    // Simplified distance calculation for quarter pipe
+    // Enhanced distance calculation for quarter pipe
     const pipePos = pipe.position;
     const pipeDim = pipe.dimensions;
 
-    // Check if within width bounds
-    if (Math.abs(point.x - pipePos.x) > pipeDim.width / 2) {
+    // Check if within width and length bounds with larger tolerance
+    if (Math.abs(point.x - pipePos.x) > pipeDim.width / 2 + 1.0) {
       return 100; // Out of range
     }
 
-    // Check if within length bounds
-    if (Math.abs(point.z - pipePos.z) > pipeDim.length / 2) {
+    if (Math.abs(point.z - pipePos.z) > pipeDim.length / 2 + 1.0) {
       return 100; // Out of range
     }
 
-    // Calculate approx. distance to curved surface (simplified)
-    const dx = point.x - (pipePos.x - pipeDim.width / 2);
-    const dy = point.y;
-    const distToCorner = Math.sqrt(dx * dx + dy * dy);
+    // Calculate distance to curved surface with improved precision
+    // For quarter pipe, we're measuring from the corner
+    const cornerX = pipePos.x - pipeDim.width / 2;
+    const cornerY = 0; // Assuming pipe starts at ground level
 
-    return Math.abs(distToCorner - pipeDim.width / 2);
+    const dx = point.x - cornerX;
+    const dy = point.y - cornerY;
+
+    // The radius of the quarter pipe curve
+    const radius = pipeDim.width;
+
+    // If we're outside the quarter pipe area completely
+    if (dx < 0 || dy < 0) {
+      return 100;
+    }
+
+    // Calculate distance from point to the quarter-circle
+    const distToCenter = Math.sqrt(dx * dx + dy * dy);
+
+    return Math.abs(distToCenter - radius);
   }
 
   calculateQuarterPipeNormal(point, pipe) {
-    // Simplified normal calculation for quarter pipe
+    // Enhanced normal calculation for quarter pipe
     const pipePos = pipe.position;
     const pipeDim = pipe.dimensions;
 
-    // Calculate vector from corner of pipe to point
-    const dx = point.x - (pipePos.x - pipeDim.width / 2);
-    const dy = point.y;
+    // Calculate position relative to the corner of the quarter-pipe
+    const cornerX = pipePos.x - pipeDim.width / 2;
+    const cornerY = 0;
 
-    // Normalize
-    const length = Math.sqrt(dx * dx + dy * dy);
-    return new THREE.Vector3(dx / length, dy / length, 0);
+    const dx = point.x - cornerX;
+    const dy = point.y - cornerY;
+
+    // Get angle in the quarter-pipe curve
+    const angle = Math.atan2(dy, dx);
+
+    // Calculate normal vector pointing perpendicular to the curve surface
+    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).normalize();
   }
 
   calculateBoxNormal(point, boxPos, boxDim) {
-    // Determine which face of the box was hit
+    // Determine which face of the box was hit with more precision
     const dx = point.x - boxPos.x;
     const dy = point.y - boxPos.y;
     const dz = point.z - boxPos.z;
 
-    // Find the closest face
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const absDz = Math.abs(dz);
+    // Calculate relative distances to each face as percentages
+    const percentX = Math.abs(dx) / (boxDim.width / 2);
+    const percentY = Math.abs(dy) / (boxDim.height / 2);
+    const percentZ = Math.abs(dz) / (boxDim.length / 2);
 
-    const halfWidth = boxDim.width / 2;
-    const halfHeight = boxDim.height / 2;
-    const halfLength = boxDim.length / 2;
-
-    if (absDx > absDy && absDx > absDz) {
+    // Determine which face was hit based on closest approach
+    if (percentX >= percentY && percentX >= percentZ) {
       // X-axis faces
       return new THREE.Vector3(Math.sign(dx), 0, 0);
-    } else if (absDy > absDx && absDy > absDz) {
+    } else if (percentY >= percentX && percentY >= percentZ) {
       // Y-axis faces
       return new THREE.Vector3(0, Math.sign(dy), 0);
     } else {

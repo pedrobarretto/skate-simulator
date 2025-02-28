@@ -6,10 +6,11 @@ class SkatePark {
     this.rails = [];
 
     this.createGround();
-    this.createHalfPipe();
-    this.createFunBox();
+    // Commented out obstacle creation until we're ready to add them back one by one
+    // this.createHalfPipe();
+    // this.createFunBox();
     this.createRails();
-    this.createQuarterPipe();
+    // this.createQuarterPipe();
     this.createBoundaries();
   }
 
@@ -353,14 +354,17 @@ class SkatePark {
   }
 
   getObstacles() {
-    return this.obstacles;
+    // Only returning wall obstacles for now
+    return this.obstacles.filter((obstacle) => obstacle.type === 'wall');
   }
 
   getRamps() {
-    return this.ramps;
+    // Return empty array since we've removed all ramps
+    return [];
   }
 
   getRails() {
+    // No change needed, only returning rails
     return this.rails;
   }
 }
