@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skate Park Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div id="game-canvas"></div>
+        <div class="hud">
+            <div class="score">Score: <span id="score">0</span></div>
+            <div class="tricks">Last Trick: <span id="trick">None</span></div>
+        </div>
+        <div class="controls-info">
+            <p>WASD - Move | SPACE - Jump | ARROW KEYS - Tricks</p>
+        </div>
+    </div>
+    <div class="start-screen" id="start-screen">
+        <h1>Skate Park Simulator</h1>
+        <button id="start-button">Start Skating</button>
+    </div>
+
+    <!-- Three.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Game scripts -->
+    <script src="js/physics.js"></script>
+    <script src="js/skatepark.js"></script>
+    <script src="js/skater.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html> 
