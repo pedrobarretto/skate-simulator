@@ -1,4 +1,4 @@
-# Skate Park Simulator
+# [WIP] Skate Park Simulator - Entirely Made With Cursor!
 
 A 3D skateboarding game built with Three.js, JavaScript, HTML, and CSS.
 
