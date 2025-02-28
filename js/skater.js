@@ -14,10 +14,16 @@ class Skater {
     this.isJumping = false;
     this.isGrinding = false;
     this.isInAir = false;
+    this.isApproachingRail = false; // New flag to detect rail approach
+    this.approachingRail = null; // Store the rail being approached
+    this.preferredGrindStyle = '50-50'; // Style that will be used when landing on rail
     this.rotationSpeed = Math.PI;
     this.trickRotation = new THREE.Vector3(0, 0, 0);
     this.currentTrick = null;
     this.trickTimer = 0;
+    this.grindStyle = '50-50'; // Default grind style - options: '50-50', 'boardslide', '5-0', 'nosegrind', 'crooked'
+    this.boardRotation = new THREE.Euler(0, 0, 0); // Track board rotation for grinding
+    this.approachIndicator = null; // Visual indicator for rail approach
 
     // Keyboard state
     this.keys = {
@@ -126,6 +132,23 @@ class Skater {
 
     // Set initial position
     this.skateboard.position.copy(this.position);
+
+    // Create approach indicator (hidden by default)
+    const indicatorGeometry = new THREE.RingGeometry(0.8, 1.0, 16);
+    const indicatorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+    });
+    this.approachIndicator = new THREE.Mesh(
+      indicatorGeometry,
+      indicatorMaterial
+    );
+    this.approachIndicator.rotation.x = Math.PI / 2; // Lay flat
+    this.approachIndicator.position.y = -0.5; // Below the board
+    this.approachIndicator.visible = false;
+    this.skateboard.add(this.approachIndicator);
   }
 
   setupControls() {
@@ -159,19 +182,60 @@ class Skater {
         break;
       case 'ArrowUp':
         this.keys.trick1 = true;
-        this.doTrick('kickflip');
+        if (this.isGrinding || this.isApproachingRail) {
+          // Switch to nose tricks (front truck on rail)
+          this.preferredGrindStyle = 'nosegrind';
+          if (this.isGrinding) {
+            this.setGrindStyle('nosegrind');
+          }
+        } else if (this.isInAir) {
+          this.doTrick('kickflip');
+        }
         break;
       case 'ArrowDown':
         this.keys.trick2 = true;
-        this.doTrick('heelflip');
+        if (this.isGrinding || this.isApproachingRail) {
+          // Switch to tail tricks (back truck on rail)
+          this.preferredGrindStyle = '5-0';
+          if (this.isGrinding) {
+            this.setGrindStyle('5-0');
+          }
+        } else if (this.isInAir) {
+          this.doTrick('heelflip');
+        }
         break;
       case 'ArrowLeft':
         this.keys.trick3 = true;
-        this.doTrick('360flip');
+        if (this.isGrinding || this.isApproachingRail) {
+          // Switch to regular stance (both trucks on rail)
+          this.preferredGrindStyle = '50-50';
+          if (this.isGrinding) {
+            this.setGrindStyle('50-50');
+          }
+        } else if (this.isInAir) {
+          this.doTrick('360flip');
+        }
         break;
       case 'ArrowRight':
         this.keys.trick4 = true;
-        this.doTrick('shuvit');
+        if (this.isGrinding || this.isApproachingRail) {
+          // Switch to sideways stance
+          this.preferredGrindStyle = 'boardslide';
+          if (this.isGrinding) {
+            this.setGrindStyle('boardslide');
+          }
+        } else if (this.isInAir) {
+          this.doTrick('shuvit');
+        }
+        break;
+      case 'KeyC':
+        // Crooked grind (angled nosegrind)
+        if (this.isGrinding || this.isApproachingRail) {
+          this.preferredGrindStyle = 'crooked';
+          if (this.isGrinding) {
+            this.setGrindStyle('crooked');
+          }
+        }
         break;
     }
   }
@@ -214,11 +278,40 @@ class Skater {
     this.updateTrickState(delta);
     this.updateSkaterAnimation(delta);
 
+    // Update approach indicator visibility
+    if (this.approachIndicator) {
+      this.approachIndicator.visible = this.isApproachingRail;
+
+      // Pulse the indicator when visible
+      if (this.isApproachingRail) {
+        const pulseScale = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+        this.approachIndicator.scale.set(pulseScale, pulseScale, 1);
+
+        // Change color based on selected grind style
+        if (this.preferredGrindStyle === '50-50') {
+          this.approachIndicator.material.color.set(0x00ff00); // Green
+        } else if (this.preferredGrindStyle === 'boardslide') {
+          this.approachIndicator.material.color.set(0xff0000); // Red
+        } else if (this.preferredGrindStyle === '5-0') {
+          this.approachIndicator.material.color.set(0x0000ff); // Blue
+        } else if (this.preferredGrindStyle === 'nosegrind') {
+          this.approachIndicator.material.color.set(0xffff00); // Yellow
+        } else if (this.preferredGrindStyle === 'crooked') {
+          this.approachIndicator.material.color.set(0xff00ff); // Purple
+        }
+      }
+    }
+
     // Update skateboard position
     this.skateboard.position.copy(this.position);
 
-    // Rotate skateboard to face movement direction
-    if (this.speed > 0.1 || this.speed < -0.1) {
+    // Rotate skateboard to face movement direction or apply grinding rotation
+    if (this.isGrinding) {
+      // Apply the stored grind rotation
+      this.skateboard.rotation.x = this.boardRotation.x;
+      this.skateboard.rotation.y = this.boardRotation.y;
+      this.skateboard.rotation.z = this.boardRotation.z;
+    } else if (this.speed > 0.1 || this.speed < -0.1) {
       const angle = Math.atan2(this.direction.x, this.direction.z);
       this.skateboard.rotation.y = angle;
     }
@@ -432,9 +525,43 @@ class Skater {
   updateSkaterAnimation(delta) {
     // Animate legs based on grind state or air state
     if (this.isGrinding) {
-      // Grinding animation
-      this.rightLeg.position.y = 0.2 + Math.sin(Date.now() * 0.01) * 0.1;
-      this.leftLeg.position.y = 0.2 - Math.sin(Date.now() * 0.01) * 0.1;
+      // Grinding animation - different for each style
+      if (this.grindStyle === '5-0') {
+        // 5-0 stance - front foot lifted, back foot down
+        this.rightLeg.position.y = 0.5;
+        this.leftLeg.position.y = 0.3;
+        // Arms out for balance
+        this.rightArm.rotation.z = -Math.PI / 2.5;
+        this.leftArm.rotation.z = Math.PI / 2.5;
+      } else if (this.grindStyle === 'nosegrind') {
+        // Nosegrind stance - back foot lifted, front foot down
+        this.rightLeg.position.y = 0.3;
+        this.leftLeg.position.y = 0.5;
+        // Arms out for balance, opposite of 5-0
+        this.rightArm.rotation.z = -Math.PI / 3;
+        this.leftArm.rotation.z = Math.PI / 2.2;
+      } else if (this.grindStyle === 'boardslide') {
+        // Boardslide stance - legs spread wider
+        this.rightLeg.position.set(0.35, 0.3, 0);
+        this.leftLeg.position.set(-0.35, 0.3, 0);
+        // Arms out for balance
+        this.rightArm.rotation.z = -Math.PI / 2.5;
+        this.leftArm.rotation.z = Math.PI / 2.5;
+      } else if (this.grindStyle === 'crooked') {
+        // Crooked grind - similar to nosegrind but asymmetrical
+        this.rightLeg.position.y = 0.25;
+        this.leftLeg.position.y = 0.4;
+        // Asymmetrical arm positions
+        this.rightArm.rotation.z = -Math.PI / 2.2;
+        this.leftArm.rotation.z = Math.PI / 3;
+      } else {
+        // Regular 50-50 grinding animation
+        this.rightLeg.position.y = 0.2 + Math.sin(Date.now() * 0.01) * 0.1;
+        this.leftLeg.position.y = 0.2 - Math.sin(Date.now() * 0.01) * 0.1;
+        // Regular arm position
+        this.rightArm.rotation.z = -Math.PI / 4;
+        this.leftArm.rotation.z = Math.PI / 4;
+      }
     } else if (this.isInAir) {
       // Air animation
       this.rightLeg.position.y = 0.2;
@@ -493,6 +620,10 @@ class Skater {
         rails = skatePark.getRails();
       }
     }
+
+    // Reset rail approach detection each frame
+    this.isApproachingRail = false;
+    this.approachingRail = null;
 
     // PRE-CHECK COLLISIONS AT NEXT POSITION TO PREVENT TUNNELING
 
@@ -624,6 +755,7 @@ class Skater {
         );
         const zDiff = Math.abs(nextPosition.z - railPos.z);
 
+        // Regular rail collision detection
         if (
           xDiff < railDim.width * 2.0 &&
           yDiff < railDim.height * 1.5 &&
@@ -632,6 +764,29 @@ class Skater {
           willBeOnRail = true;
           railToUse = rail;
           break;
+        }
+
+        // Rail approach detection - wider detection area when in air and moving downward
+        if (this.isInAir && this.velocity.y < 0) {
+          const approachXDiff = Math.abs(nextPosition.x - railPos.x);
+          const approachYDiff = Math.abs(
+            nextPosition.y - (railPos.y + railDim.height / 2)
+          );
+          const approachZDiff = Math.abs(nextPosition.z - railPos.z);
+
+          // Wider bounds for approach detection
+          if (
+            approachXDiff < railDim.width * 3.0 &&
+            approachYDiff < railDim.height * 4.0 && // Much higher detection above rail
+            approachZDiff < railDim.length / 2 + 2.0 &&
+            nextPosition.y > railPos.y // Must be above the rail
+          ) {
+            this.isApproachingRail = true;
+            this.approachingRail = rail;
+
+            // Visual indicator for debug - can be removed in production
+            // (show a small visual hint that you're about to grind)
+          }
         }
       }
 
@@ -830,6 +985,36 @@ class Skater {
             // Get the current movement direction (positive or negative Z)
             const movementDirection = Math.sign(this.direction.z);
 
+            // Use the preferred grind style if one was selected during approach
+            // Otherwise, determine based on approach angle
+            if (this.preferredGrindStyle && this.isApproachingRail) {
+              this.grindStyle = this.preferredGrindStyle;
+            } else {
+              // Start with a 50-50 grind by default (along rail)
+              this.grindStyle = '50-50';
+
+              // Determine grind style based on approach angle and speed
+              const approachAngle = Math.abs(
+                Math.atan2(this.direction.x, this.direction.z)
+              );
+              if (approachAngle > Math.PI / 4) {
+                // If approaching from a significant angle, start with boardslide
+                this.grindStyle = 'boardslide';
+              } else if (this.velocity.y < -5.0) {
+                // If approaching with high downward velocity, higher chance of nosegrind or 5-0
+                if (this.direction.z > 0) {
+                  // Going forward - more likely nosegrind
+                  this.grindStyle = Math.random() > 0.5 ? 'nosegrind' : '5-0';
+                } else {
+                  // Going backward - more likely 5-0
+                  this.grindStyle = Math.random() > 0.7 ? 'nosegrind' : '5-0';
+                }
+              }
+            }
+
+            // Update visuals for the grind style
+            this.updateGrindVisuals();
+
             // Apply movement in the direction the skater is facing with proper speed
             this.position.z += this.speed * movementDirection * delta;
 
@@ -844,20 +1029,20 @@ class Skater {
               this.isGrinding = false;
               this.isInAir = true;
 
-              // More substantial exit boost for leaving rail
-              const exitSpeed = Math.max(this.speed, 7.0); // Higher minimum exit speed
+              // More substantial exit boost for leaving rail - preserve speed better
+              const exitSpeed = Math.max(Math.abs(this.speed) * 1.2, 9.0); // Higher exit speed that scales with current speed
               this.velocity.z = movementDirection * exitSpeed;
 
               // Stronger vertical boost to get off the rail completely
-              this.velocity.y += 3.5;
+              this.velocity.y += 4.0; // Increased from 3.5
 
               // Set X velocity slightly away from rail to prevent re-detection
-              this.velocity.x = Math.random() > 0.5 ? 0.5 : -0.5;
+              this.velocity.x = Math.random() > 0.5 ? 1.0 : -1.0; // Increased from 0.5
 
               // Position farther from the rail end to completely clear collision detection
               this.position.z =
-                this.position.z < railStart ? railStart - 0.5 : railEnd + 0.5;
-              this.position.y += 0.2; // Lift up slightly to clear the rail
+                this.position.z < railStart ? railStart - 0.6 : railEnd + 0.6; // Increased from 0.5
+              this.position.y += 0.3; // Lift up slightly more to clear the rail (increased from 0.2)
 
               // Force update state flags to ensure controls work
               this.isOnGround = false;
@@ -875,17 +1060,135 @@ class Skater {
               this.isInAir = false;
             }
 
-            // Keep the skater's current direction instead of forcing a specific direction
-            // Just adjust the X component slightly to align with rail
-            this.direction.x = this.direction.x * 0.1; // Reduce sideways movement
-            this.direction.normalize();
+            // Adjust the direction based on grind style
+            if (this.grindStyle === '50-50') {
+              // For 50-50 grind - reduce sideways movement but keep the z direction
+              this.direction.x = this.direction.x * 0.1; // Reduce sideways movement
+              this.direction.normalize();
+            } else if (this.grindStyle === 'boardslide') {
+              // More responsive forward/backward control during boardslide
+              if (this.keys.forward) {
+                // Faster acceleration when pressing forward
+                const targetSpeed = this.maxSpeed * 0.9; // 90% of max speed
+                this.speed = Math.min(this.speed + delta * 7.0, targetSpeed);
+                this.velocity.z = Math.abs(this.speed) * 1.2;
+              } else if (this.keys.backward) {
+                // Faster acceleration when pressing backward
+                const targetSpeed = this.maxSpeed * 0.7; // 70% of max speed
+                this.speed = Math.min(this.speed + delta * 5.0, targetSpeed);
+                this.velocity.z = -Math.abs(this.speed) * 1.2;
+              } else {
+                // Maintain current direction with less slowdown
+                this.velocity.z =
+                  Math.sign(this.velocity.z) * Math.abs(this.speed) * 1.0;
+              }
 
-            // Maintain speed with slight reduction
-            this.speed *= 0.99;
+              // Improved sideways control
+              if (this.keys.left) {
+                this.velocity.x -= delta * 1.5; // Increased from 0.5 to 1.5
+              }
+              if (this.keys.right) {
+                this.velocity.x += delta * 1.5; // Increased from 0.5 to 1.5
+              }
+
+              // Stronger centering force on rail but still allows some sideways movement
+              const railCenteringForce = 4.0; // Increased from 3.0
+              this.velocity.x +=
+                (railToUse.position.x - this.position.x) * railCenteringForce;
+            } else if (
+              this.grindStyle === '5-0' ||
+              this.grindStyle === 'nosegrind'
+            ) {
+              // For 5-0/nosegrind - slight reduction in stability (more likely to fall)
+              this.direction.x = this.direction.x * 0.2; // A bit less stable than 50-50
+              this.direction.normalize();
+
+              // More responsive to input for these tricks
+              if (this.keys.forward) {
+                const targetSpeed = this.maxSpeed * 0.9; // Increase target speed
+                this.speed = Math.min(this.speed + delta * 8.0, targetSpeed); // Faster acceleration (increased from 5.0)
+              } else if (this.keys.backward) {
+                const targetSpeed = -this.maxSpeed * 0.6; // Increased from 0.5
+                this.speed = Math.max(this.speed - delta * 8.0, targetSpeed); // Faster acceleration
+              }
+
+              // These grinds have less friction but can be less stable
+              const fallChance = this.grindStyle === '5-0' ? 0.01 : 0.008;
+              if (Math.random() < fallChance) {
+                // Small chance of falling off
+                this.isGrinding = false;
+                this.isInAir = true;
+                this.velocity.y = 1.0;
+              }
+            } else if (this.grindStyle === 'crooked') {
+              // Crooked grind - even less stable than nosegrind
+              this.direction.x = this.direction.x * 0.3; // Less stable
+              this.direction.normalize();
+
+              // More responsive to input for better control
+              if (this.keys.forward) {
+                const targetSpeed = this.maxSpeed * 1.0; // Can reach full speed (increased from 0.9)
+                this.speed = Math.min(this.speed + delta * 10.0, targetSpeed); // Much faster acceleration (increased from 7.0)
+              } else if (this.keys.backward) {
+                const targetSpeed = -this.maxSpeed * 0.7; // Increased from 0.6
+                this.speed = Math.max(this.speed - delta * 10.0, targetSpeed); // Faster acceleration
+              }
+
+              // More chance of falling but also faster
+              if (Math.random() < 0.015) {
+                // Higher chance of falling off
+                this.isGrinding = false;
+                this.isInAir = true;
+                this.velocity.y = 1.0;
+              }
+            }
+
+            // Maintain speed with slight reduction based on grind style
+            const grindFriction =
+              this.grindStyle === 'boardslide'
+                ? 1.0 // No friction for boardslide (increased from 0.99 to 1.0)
+                : this.grindStyle === '5-0'
+                ? 0.997 // Higher value means less friction
+                : this.grindStyle === 'nosegrind'
+                ? 0.995 // Higher value means less friction
+                : this.grindStyle === 'crooked'
+                ? 0.993 // Higher value means less friction
+                : 0.993;
+            this.speed *= grindFriction;
+
+            // Add a small speed boost for boardslide to compensate for starting slower
+            if (
+              this.grindStyle === 'boardslide' &&
+              this.speed < this.maxSpeed * 0.7
+            ) {
+              this.speed += delta * 2.0; // Gradual acceleration
+            }
+
+            // Zero out vertical velocity while grinding
             this.velocity.y = 0;
-            // Maintain the Z velocity direction to keep moving the right way
-            this.velocity.z = this.speed * movementDirection;
-            this.velocity.x = 0; // Zero out X velocity while on the rail
+
+            // Update velocity based on grind style - this ensures proper movement
+            if (this.grindStyle === 'boardslide') {
+              // Boardslide was already handled above
+              // Just make sure we maintain X centering with a gentle force
+              this.velocity.x = (railToUse.position.x - this.position.x) * 3.0;
+            } else {
+              // For other grinds, maintain the Z velocity direction to keep moving the right way
+              this.velocity.z = this.speed * movementDirection;
+              this.velocity.x = 0; // Zero out X velocity while on the rail
+
+              // 50-50 grind - now also responds better to input controls
+              if (this.grindStyle === '50-50') {
+                // Regular 50-50 should also respond to input
+                if (this.keys.forward) {
+                  const targetSpeed = this.maxSpeed * 0.95;
+                  this.speed = Math.min(this.speed + delta * 6.0, targetSpeed);
+                } else if (this.keys.backward) {
+                  const targetSpeed = -this.maxSpeed * 0.6;
+                  this.speed = Math.max(this.speed - delta * 6.0, targetSpeed);
+                }
+              }
+            }
           } else {
             // Coming from side - bounce off
             // Get direction to rail center
@@ -1068,5 +1371,96 @@ class Skater {
 
   setPhysics(physics) {
     this.physics = physics;
+  }
+
+  setGrindStyle(style) {
+    // Set a specific grind style directly
+    if (
+      ['50-50', 'boardslide', '5-0', 'nosegrind', 'crooked'].includes(style)
+    ) {
+      this.grindStyle = style;
+      this.updateGrindVisuals();
+
+      // Play a sound or visual effect for style change
+      // (sound effects would be added in a future implementation)
+    }
+  }
+
+  toggleGrindStyle() {
+    // Cycle through different grind styles
+    const styles = ['50-50', 'boardslide', '5-0', 'nosegrind', 'crooked'];
+    const currentIndex = styles.indexOf(this.grindStyle);
+    const nextIndex = (currentIndex + 1) % styles.length;
+    this.grindStyle = styles[nextIndex];
+
+    // Apply immediate visual change
+    this.updateGrindVisuals();
+  }
+
+  updateGrindVisuals() {
+    // Reset all rotations first
+    this.boardRotation.set(0, 0, 0);
+
+    // Reset any position offsets by storing railX position
+    const railX = this.position.x;
+
+    // Update skateboard rotation based on grind style
+    if (this.grindStyle === 'boardslide') {
+      // For boardslide, rotate the board 90 degrees (perpendicular to rail)
+      this.boardRotation.y = Math.PI / 2;
+
+      // Raised stance for boardslide
+      this.position.y += 0.05;
+    } else if (this.grindStyle === '5-0') {
+      // For 5-0, tilt the board forward and keep aligned with direction
+      const angle = Math.atan2(this.direction.x, this.direction.z);
+      this.boardRotation.y = angle;
+      this.boardRotation.x = -Math.PI / 12; // Tilt forward
+
+      // Move position slightly forward to account for the tilt
+      const directionVec = new THREE.Vector3(
+        this.direction.x,
+        0,
+        this.direction.z
+      ).normalize();
+      this.position.x = railX + directionVec.x * 0.3;
+      this.position.z += directionVec.z * 0.3;
+    } else if (this.grindStyle === 'nosegrind') {
+      // For nosegrind, tilt the board backward and keep aligned with direction
+      const angle = Math.atan2(this.direction.x, this.direction.z);
+      this.boardRotation.y = angle;
+      this.boardRotation.x = Math.PI / 12; // Tilt backward
+
+      // Move position slightly backward to account for the tilt
+      const directionVec = new THREE.Vector3(
+        this.direction.x,
+        0,
+        this.direction.z
+      ).normalize();
+      this.position.x = railX - directionVec.x * 0.3;
+      this.position.z -= directionVec.z * 0.3;
+    } else if (this.grindStyle === 'crooked') {
+      // Crooked grind - angled nosegrind
+      const angle = Math.atan2(this.direction.x, this.direction.z);
+      this.boardRotation.y = angle + Math.PI / 12; // Angle the board slightly
+      this.boardRotation.x = Math.PI / 14; // Tilt backward but less than nosegrind
+      this.boardRotation.z = Math.PI / 20; // Slight roll to the side
+
+      // Move position slightly off-center
+      const directionVec = new THREE.Vector3(
+        this.direction.x,
+        0,
+        this.direction.z
+      ).normalize();
+      this.position.x = railX - directionVec.x * 0.2 + 0.1; // Offset to the side
+      this.position.z -= directionVec.z * 0.2;
+    } else {
+      // For 50-50, align with direction of travel
+      const angle = Math.atan2(this.direction.x, this.direction.z);
+      this.boardRotation.y = angle;
+
+      // Reset to center of rail
+      this.position.x = railX;
+    }
   }
 }
