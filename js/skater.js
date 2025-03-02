@@ -89,6 +89,7 @@ class Skater {
     });
     this.body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     this.body.position.y = 0.8;
+    this.body.rotation.y = Math.PI / 2; // Rotate 90 degrees to stand sideways
     this.skateboard.add(this.body);
 
     // Create a head
@@ -110,25 +111,29 @@ class Skater {
       metalness: 0.2,
     });
 
-    // Arms
-    this.rightArm = new THREE.Mesh(limbGeometry, limbMaterial);
-    this.rightArm.position.set(0.5, 1.0, 0);
-    this.rightArm.rotation.z = -Math.PI / 4;
-    this.skateboard.add(this.rightArm);
+    // Arms - positioned for skating stance (front and back arms instead of left/right)
+    this.frontArm = new THREE.Mesh(limbGeometry, limbMaterial);
+    this.frontArm.position.set(0, 1.0, 0.5); // Front arm (in direction of travel)
+    this.frontArm.rotation.z = -Math.PI / 4;
+    this.frontArm.rotation.x = Math.PI / 4; // Angled slightly forward
+    this.skateboard.add(this.frontArm);
 
-    this.leftArm = new THREE.Mesh(limbGeometry, limbMaterial);
-    this.leftArm.position.set(-0.5, 1.0, 0);
-    this.leftArm.rotation.z = Math.PI / 4;
-    this.skateboard.add(this.leftArm);
+    this.backArm = new THREE.Mesh(limbGeometry, limbMaterial);
+    this.backArm.position.set(0, 1.0, -0.5); // Back arm
+    this.backArm.rotation.z = Math.PI / 4;
+    this.backArm.rotation.x = -Math.PI / 4; // Angled slightly backward
+    this.skateboard.add(this.backArm);
 
-    // Legs
-    this.rightLeg = new THREE.Mesh(limbGeometry, limbMaterial);
-    this.rightLeg.position.set(0.2, 0.4, 0);
-    this.skateboard.add(this.rightLeg);
+    // Legs - positioned in skating stance (front and back legs in Z direction)
+    this.frontLeg = new THREE.Mesh(limbGeometry, limbMaterial);
+    this.frontLeg.position.set(0, 0.4, 0.35); // Front leg (near nose of board)
+    this.frontLeg.rotation.x = Math.PI / 12; // Slight angle
+    this.skateboard.add(this.frontLeg);
 
-    this.leftLeg = new THREE.Mesh(limbGeometry, limbMaterial);
-    this.leftLeg.position.set(-0.2, 0.4, 0);
-    this.skateboard.add(this.leftLeg);
+    this.backLeg = new THREE.Mesh(limbGeometry, limbMaterial);
+    this.backLeg.position.set(0, 0.4, -0.35); // Back leg (near tail of board)
+    this.backLeg.rotation.x = -Math.PI / 12; // Slight angle
+    this.skateboard.add(this.backLeg);
 
     // Set initial position
     this.skateboard.position.copy(this.position);
@@ -528,53 +533,53 @@ class Skater {
       // Grinding animation - different for each style
       if (this.grindStyle === '5-0') {
         // 5-0 stance - front foot lifted, back foot down
-        this.rightLeg.position.y = 0.5;
-        this.leftLeg.position.y = 0.3;
+        this.frontLeg.position.y = 0.5;
+        this.backLeg.position.y = 0.3;
         // Arms out for balance
-        this.rightArm.rotation.z = -Math.PI / 2.5;
-        this.leftArm.rotation.z = Math.PI / 2.5;
+        this.frontArm.rotation.z = -Math.PI / 2.5;
+        this.backArm.rotation.z = Math.PI / 2.5;
       } else if (this.grindStyle === 'nosegrind') {
         // Nosegrind stance - back foot lifted, front foot down
-        this.rightLeg.position.y = 0.3;
-        this.leftLeg.position.y = 0.5;
+        this.frontLeg.position.y = 0.3;
+        this.backLeg.position.y = 0.5;
         // Arms out for balance, opposite of 5-0
-        this.rightArm.rotation.z = -Math.PI / 3;
-        this.leftArm.rotation.z = Math.PI / 2.2;
+        this.frontArm.rotation.z = -Math.PI / 3;
+        this.backArm.rotation.z = Math.PI / 2.2;
       } else if (this.grindStyle === 'boardslide') {
         // Boardslide stance - legs spread wider
-        this.rightLeg.position.set(0.35, 0.3, 0);
-        this.leftLeg.position.set(-0.35, 0.3, 0);
+        this.frontLeg.position.set(0, 0.3, 0.45);
+        this.backLeg.position.set(0, 0.3, -0.45);
         // Arms out for balance
-        this.rightArm.rotation.z = -Math.PI / 2.5;
-        this.leftArm.rotation.z = Math.PI / 2.5;
+        this.frontArm.rotation.z = -Math.PI / 2.5;
+        this.backArm.rotation.z = Math.PI / 2.5;
       } else if (this.grindStyle === 'crooked') {
         // Crooked grind - similar to nosegrind but asymmetrical
-        this.rightLeg.position.y = 0.25;
-        this.leftLeg.position.y = 0.4;
+        this.frontLeg.position.y = 0.25;
+        this.backLeg.position.y = 0.4;
         // Asymmetrical arm positions
-        this.rightArm.rotation.z = -Math.PI / 2.2;
-        this.leftArm.rotation.z = Math.PI / 3;
+        this.frontArm.rotation.z = -Math.PI / 2.2;
+        this.backArm.rotation.z = Math.PI / 3;
       } else {
         // Regular 50-50 grinding animation
-        this.rightLeg.position.y = 0.2 + Math.sin(Date.now() * 0.01) * 0.1;
-        this.leftLeg.position.y = 0.2 - Math.sin(Date.now() * 0.01) * 0.1;
+        this.frontLeg.position.y = 0.2 + Math.sin(Date.now() * 0.01) * 0.1;
+        this.backLeg.position.y = 0.2 - Math.sin(Date.now() * 0.01) * 0.1;
         // Regular arm position
-        this.rightArm.rotation.z = -Math.PI / 4;
-        this.leftArm.rotation.z = Math.PI / 4;
+        this.frontArm.rotation.z = -Math.PI / 4;
+        this.backArm.rotation.z = Math.PI / 4;
       }
     } else if (this.isInAir) {
       // Air animation
-      this.rightLeg.position.y = 0.2;
-      this.leftLeg.position.y = 0.2;
-      this.rightArm.rotation.z = -Math.PI / 3;
-      this.leftArm.rotation.z = Math.PI / 3;
+      this.frontLeg.position.y = 0.2;
+      this.backLeg.position.y = 0.2;
+      this.frontArm.rotation.z = -Math.PI / 3;
+      this.backArm.rotation.z = Math.PI / 3;
     } else {
       // Regular riding animation
-      this.rightLeg.position.y = 0.4;
-      this.leftLeg.position.y = 0.4;
-      this.rightArm.rotation.z =
+      this.frontLeg.position.y = 0.4;
+      this.backLeg.position.y = 0.4;
+      this.frontArm.rotation.z =
         -Math.PI / 4 + Math.sin(Date.now() * 0.005) * 0.1;
-      this.leftArm.rotation.z =
+      this.backArm.rotation.z =
         Math.PI / 4 - Math.sin(Date.now() * 0.005) * 0.1;
     }
   }
